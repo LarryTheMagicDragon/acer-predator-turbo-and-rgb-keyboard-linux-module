@@ -102,6 +102,7 @@ enum acer_wmi_event_ids {
 	WMID_HOTKEY_EVENT = 0x1,
 	WMID_ACCEL_OR_KBD_DOCK_EVENT = 0x5,
 	WMID_GAMING_TURBO_KEY_EVENT = 0x7,
+	WMID_BRIGHTNESS_CONTROL_EVENT = 0x4,
 };
 
 static const struct key_entry acer_wmi_keymap[] __initconst = {
@@ -139,6 +140,7 @@ static const struct key_entry acer_wmi_keymap[] __initconst = {
 	{KE_KEY, 0x85, {KEY_TOUCHPAD_TOGGLE} },
 	{KE_KEY, 0x86, {KEY_WLAN} },
 	{KE_KEY, 0x87, {KEY_POWER} },
+	{KE_KEY, 0x88, {KEY_PRESENTATION} },//ltmd debugging /* an515-58 P_Key */
 	{KE_END, 0}
 };
 
@@ -262,6 +264,8 @@ struct hotkey_function_type_aa {
 #define ACER_CAP_GAMINGKB		BIT(10)
 #define ACER_CAP_GAMINGKB_STATIC		BIT(11)
 
+#define ACER_CAP_PLATFORM_PROFILE	BIT(10)
+#define ACER_CAP_FAN_SPEED_READ		BIT(11)
 /*
  * Interface type flags
  */
@@ -290,6 +294,8 @@ static bool has_type_aa;
 static int turbo_state = 0;
 static u16 commun_func_bitmap;
 static u8 commun_fn_key_number;
+static bool cycle_gaming_thermal_profile = true;
+static bool predator_v4;
 
 module_param(mailled, int, 0444);
 module_param(brightness, int, 0444);
@@ -297,12 +303,18 @@ module_param(threeg, int, 0444);
 module_param(force_series, int, 0444);
 module_param(force_caps, int, 0444);
 module_param(ec_raw_mode, bool, 0444);
+module_param(cycle_gaming_thermal_profile, bool, 0644);
+module_param(predator_v4, bool, 0444);
 MODULE_PARM_DESC(mailled, "Set initial state of Mail LED");
 MODULE_PARM_DESC(brightness, "Set initial LCD backlight brightness");
 MODULE_PARM_DESC(threeg, "Set initial state of 3G hardware");
 MODULE_PARM_DESC(force_series, "Force a different laptop series");
 MODULE_PARM_DESC(force_caps, "Force the capability bitmask to this value");
 MODULE_PARM_DESC(ec_raw_mode, "Enable EC raw mode");
+MODULE_PARM_DESC(cycle_gaming_thermal_profile,
+	"Set thermal mode key in cycle mode. Disabling it sets the mode key in turbo toggle mode");
+MODULE_PARM_DESC(predator_v4,
+	"Enable features for predator laptops that use predator sense v4");
 
 struct acer_data {
 	int mailled;
@@ -368,6 +380,7 @@ struct quirk_entry {
 	u8 turbo;
 	u8 cpu_fans;
 	u8 gpu_fans;
+	u8 predator_v4;
 };
 
 static struct quirk_entry *quirks;
@@ -382,7 +395,11 @@ static void __init set_quirks(void)
 
 	if (quirks->turbo)
 		interface->capability |= ACER_CAP_TURBO_OC | ACER_CAP_TURBO_LED
-								 | ACER_CAP_TURBO_FAN;
+					 | ACER_CAP_TURBO_FAN;
+
+	if (quirks->predator_v4)
+		interface->capability |= ACER_CAP_PLATFORM_PROFILE |
+					 ACER_CAP_FAN_SPEED_READ;
 }
 
 static int __init dmi_matched(const struct dmi_system_id *dmi)
@@ -1124,6 +1141,12 @@ static const struct dmi_system_id video_vendor_dmi_table[] __initconst = {
 						DMI_MATCH(DMI_SYS_VENDOR, "Acer"),
 						DMI_MATCH(DMI_PRODUCT_NAME, "KAV80"),
 				},
+		},		{
+				.ident = "Acer Nitro AN515-58",
+				.matches = {
+						DMI_MATCH(DMI_SYS_VENDOR, "Insyde Corp."),
+						DMI_MATCH(DMI_PRODUCT_NAME, "Nitro AN515-58"),
+				},
 		},
 		{}
 };
@@ -1836,6 +1859,8 @@ WMI_gaming_execute_u8_array(u32 method_id, u8 array[], size_t array_size, u32 *o
 
 	kfree(result.pointer);
 
+	pr_warn("WMI_gaming_execute_u8_arra in methodid: %d array: %d array_size: %d out: %d", method_id, array, array_size, out);
+	//this is not formatted correctly, i just want to see if it responds to certain events
 	return status;
 }
 
@@ -1870,7 +1895,8 @@ WMI_gaming_execute_u64(u32 method_id, u64 in, u64 *out)
 		*out = tmp;
 
 	kfree(result.pointer);
-
+	//ltmd, this is for debugging
+	pr_warn("WMI_gaming_execute_u64 in: %d out: %d\n", in, out);
 	return status;
 }
 
@@ -2444,6 +2470,7 @@ static void acer_toggle_turbo(void)
 		/* Set OC to normal */
 		WMID_gaming_set_u64(0x5, ACER_CAP_TURBO_OC);
 		WMID_gaming_set_u64(0x7, ACER_CAP_TURBO_OC);
+		pr_info("Turbo deactivated\n");
 	} else {
 		turbo_state = 1;
 		/* Turn on turbo led */
@@ -2455,6 +2482,7 @@ static void acer_toggle_turbo(void)
 		/* Set OC to turbo mode */
 		WMID_gaming_set_u64(0x205, ACER_CAP_TURBO_OC);
 		WMID_gaming_set_u64(0x207, ACER_CAP_TURBO_OC);
+		pr_info("Turbo activated!\n");
 	}
 }
 
@@ -2726,6 +2754,8 @@ static void acer_wmi_notify(u32 value, void *context)
 
 			key = sparse_keymap_entry_from_scancode(acer_wmi_input_dev,
 													return_value.key_num);
+			//ltmd debugging
+			pr_warn("keycode registered: %d", key);
 			if (!key) {
 				pr_warn("Unknown key number - 0x%x\n",
 						return_value.key_num);
@@ -2763,6 +2793,11 @@ static void acer_wmi_notify(u32 value, void *context)
 			if (return_value.key_num == 0x5) { // This is for ph16-71
 				acer_toggle_turbo();
 			}
+			break;
+		case WMID_BRIGHTNESS_CONTROL_EVENT:
+			//ltmd debugging
+			pr_warn("Unhandled brightness control event");
+			acer_toggle_turbo();//this is a bad idea
 			break;
 		default:
 			pr_warn("Unknown function number - %d - %d\n",
