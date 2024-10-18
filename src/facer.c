@@ -2756,6 +2756,7 @@ static void acer_wmi_notify(u32 value, void *context)
 													return_value.key_num);
 			//ltmd debugging
 			pr_warn("keycode registered: %d", key);
+			pr_warn("keycode num: %d", return_value.key_num);
 			if (!key) {
 				pr_warn("Unknown key number - 0x%x\n",
 						return_value.key_num);
@@ -2777,6 +2778,11 @@ static void acer_wmi_notify(u32 value, void *context)
 					case KEY_TOUCHPAD_TOGGLE:
 						scancode = (device_state & ACER_WMID3_GDS_TOUCHPAD) ?
 								   KEY_TOUCHPAD_ON : KEY_TOUCHPAD_OFF;
+						break;
+					case KEY_PRESENTATION:
+						acer_toggle_turbo();
+					break;
+
 				}
 				sparse_keymap_report_event(acer_wmi_input_dev, scancode, 1, true);
 			}
