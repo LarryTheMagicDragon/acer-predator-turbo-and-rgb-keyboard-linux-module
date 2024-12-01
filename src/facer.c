@@ -2953,25 +2953,50 @@ static void acer_rfkill_exit(void)
 	}
 }
 
-static void acer_wmi_notify(union acpi_object *obj, void *context)
+static void acer_wmi_notify(
+#if RTLNX_VER_MIN(6, 12, 0)
+	union acpi_object *obj
+#else
+	u32 value
+#endif
+	, void *context)
 {
 	struct event_return_value return_value;
 	u16 device_state;
 	const struct key_entry *key;
 	u32 scancode;
 
+#if RTLNX_VER_MAX(6, 12, 0)
+	struct acpi_buffer response = { ACPI_ALLOCATE_BUFFER, NULL };
+	acpi_status status = wmi_get_event_data(value, &response);
+	if (status != AE_OK) {
+		pr_warn("bad event status 0x%x\n", status);
+		return;
+	}
+	union acpi_object *obj = (union acpi_object *)response.pointer;
+#endif
+
 	if (!obj)
 		return;
 	if (obj->type != ACPI_TYPE_BUFFER) {
 		pr_warn("Unknown response received %d\n", obj->type);
+#if RTLNX_VER_MAX(6, 12, 0)
+		kfree(obj);
+#endif
 		return;
 	}
 	if (obj->buffer.length != 8) {
 		pr_warn("Unknown buffer length %d\n", obj->buffer.length);
+#if RTLNX_VER_MAX(6, 12, 0)
+		kfree(obj);
+#endif
 		return;
 	}
 
 	return_value = *((struct event_return_value *)obj->buffer.pointer);
+#if RTLNX_VER_MAX(6, 12, 0)
+	kfree(obj);
+#endif
 
 	switch (return_value.function) {
 	case WMID_HOTKEY_EVENT:
