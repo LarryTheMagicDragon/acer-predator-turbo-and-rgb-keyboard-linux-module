@@ -51,6 +51,13 @@ MODULE_LICENSE("GPL");
     (LINUX_VERSION_CODE >= KERNEL_VERSION(a_Major, a_Minor, a_Patch))
 
 /*
+ * RTLNX_VER_MAX
+ * Evaluates to true if the linux kernel version is less to the one specfied
+ * (exclusive). */
+#define RTLNX_VER_MAX(a_Major, a_Minor, a_Patch) \
+    (LINUX_VERSION_CODE < KERNEL_VERSION(a_Major, a_Minor, a_Patch))
+
+/*
  * Magic Number
  * Meaning is unknown - this number is required for writing to ACPI for AMW0
  * (it's also used in acerhk when directly accessing the BIOS)
