@@ -1,4 +1,4 @@
-KERNELVERSION="6.11.3-arch1-1"
+KERNELVERSION="6.6.63-1-lts"
 cd /opt/turbo-fan
 
 rm /dev/acer-gkbbl-0 /dev/acer-gkbbl-static-0 -f
